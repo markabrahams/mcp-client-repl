@@ -38,13 +38,6 @@ class McpRepl {
         this.connected = true;
         this.transportType = 'stdio';
         this.transportTarget = scriptPath;
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.inputSchema,
-        }));
-        await this.listTools();
     }
 
     async connectSSE(url: string, apiKey?: string) {
@@ -62,13 +55,6 @@ class McpRepl {
         this.connected = true;
         this.transportType = 'sse';
         this.transportTarget = url;
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.inputSchema,
-        }));
-        await this.listTools();
     }
 
     async connectHTTP(url: string, apiKey?: string) {
@@ -86,13 +72,6 @@ class McpRepl {
         this.connected = true;
         this.transportType = 'http';
         this.transportTarget = url;
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.inputSchema,
-        }));
-        await this.listTools();
     }
 
     async disconnect() {
@@ -112,6 +91,13 @@ class McpRepl {
     }
 
     async listTools(full: boolean = false) {
+        const toolsResult = await this.mcp.listTools();
+        this.tools = toolsResult.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.inputSchema,
+        }));
+
         if ( ! this.connected ) {
             return console.log('Not connected.');
         }
@@ -153,7 +139,7 @@ class McpRepl {
         const apiKey = process.env.MCP_API_KEY;
 
         if ( ! serverUrl || ! transport ) {
-            console.log('No MCP_SERVER_URL or MCP_TRANSPORT found in environment variables.');
+            console.log('No automatic connection (use MCP_SERVER_URL or MCP_TRANSPORT environment variables for this)');
             return false;
         }
 
