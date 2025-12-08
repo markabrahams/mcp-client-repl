@@ -114,6 +114,25 @@ class McpRepl {
         }
     }
 
+    async showTool(toolName: string) {
+        if ( ! this.connected ) {
+            return console.log('Not connected.');
+        }
+        
+        // Ensure tools are loaded
+        if ( this.tools.length === 0 ) {
+            await this.listTools();
+        }
+        
+        const tool = this.tools.find((t) => t.name === toolName);
+        if ( ! tool ) {
+            return console.log(`Tool ${toolName} not found.`);
+        }
+
+        console.log(`Tool: ${tool.name}`);
+        console.log(JSON.stringify(tool, null, 2));
+    }
+
     async call(toolName: string, args: Record<string, any>) {
         if ( ! this.connected ) {
             return console.log('Not connected.');
@@ -188,6 +207,7 @@ Commands:
   disconnect                                       Disconnect from MCP server
   status                                           Show connection status
   tools [full]                                     List available tools (add 'full' for complete details)
+  tool <toolName>                                  Show full description for a single tool
   call <toolName> <JSON>                           Call a tool with JSON arguments e.g. call generate_image {"prompt": "A beautiful sunset"}
   help                                             Show this help
   exit                                             Exit the REPL`);
@@ -222,7 +242,16 @@ Commands:
                     const full = args.includes('full');
                     await this.listTools(full);
                     break;
-                case 'call':
+                case 'tool': {
+                    const toolName = args[0];
+                    if ( ! toolName ) {
+                        console.log('Usage: tool <toolName>');
+                        break;
+                    }
+                    await this.showTool(toolName);
+                    break;
+                }
+                case 'call': {
                     const [toolName, ...jsonParts] = args;
                     if ( ! toolName ) {
                         console.log('Usage: call <toolName> <JSON>');
@@ -239,6 +268,7 @@ Commands:
                     console.log(`Invoking tool: ${toolName} with arguments: ${JSON.stringify(parsedArgs)}`);
                     await this.call(toolName, parsedArgs);
                     break;
+                }
                 case '':
                     break;
                 default:
