@@ -5,6 +5,108 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
+/**
+ * MCP Error Code definitions and helper functions
+ */
+const MCP_ERROR_CODES = {
+    AUTHENTICATION_ERROR: -32000,
+    INVALID_SESSION: -32001,
+    METHOD_NOT_FOUND: -32002,
+    INVALID_PARAMETERS: -32003,
+    INTERNAL_ERROR: -32004,
+    PARSE_ERROR: -32005,
+} as const;
+
+interface McpErrorInfo {
+    code: number;
+    name: string;
+    description: string;
+    commonCause: string;
+    howToHandle: string;
+}
+
+const MCP_ERROR_INFO: Record<number, McpErrorInfo> = {
+    [MCP_ERROR_CODES.AUTHENTICATION_ERROR]: {
+        code: -32000,
+        name: 'Authentication Error',
+        description: 'Missing or invalid authentication token',
+        commonCause: 'The API key or authentication credentials are missing or invalid',
+        howToHandle: 'Check your MCP_API_KEY environment variable or provide a valid API key when connecting',
+    },
+    [MCP_ERROR_CODES.INVALID_SESSION]: {
+        code: -32001,
+        name: 'Invalid Session',
+        description: 'Session ID not found or expired',
+        commonCause: 'The session has expired or was not properly initialized',
+        howToHandle: 'Disconnect and reconnect to reinitialize the session',
+    },
+    [MCP_ERROR_CODES.METHOD_NOT_FOUND]: {
+        code: -32002,
+        name: 'Method Not Found',
+        description: 'The requested method does not exist',
+        commonCause: 'Called a tool or method that is not available on this server',
+        howToHandle: 'Use "tools" command to list available tools and verify the method name',
+    },
+    [MCP_ERROR_CODES.INVALID_PARAMETERS]: {
+        code: -32003,
+        name: 'Invalid Parameters',
+        description: 'Missing or invalid parameters',
+        commonCause: 'The parameters provided do not match the expected schema',
+        howToHandle: 'Use "tool <toolName>" to see the expected parameters schema and validate your input',
+    },
+    [MCP_ERROR_CODES.INTERNAL_ERROR]: {
+        code: -32004,
+        name: 'Internal Error',
+        description: 'Server-side exception occurred',
+        commonCause: 'An unexpected error occurred on the server',
+        howToHandle: 'Check server logs for details. This may be a bug in the MCP server implementation',
+    },
+    [MCP_ERROR_CODES.PARSE_ERROR]: {
+        code: -32005,
+        name: 'Parse Error',
+        description: 'Invalid JSON format',
+        commonCause: 'The request contained malformed JSON',
+        howToHandle: 'Verify your JSON syntax. Use proper escaping and formatting',
+    },
+};
+
+/**
+ * Format an error with MCP error code interpretation
+ */
+function formatMcpError(error: any): string {
+    let errorMessage = '';
+    
+    // Extract error code if available
+    let errorCode: number | undefined;
+    if (error?.code !== undefined) {
+        errorCode = error.code;
+    } else if (error?.error?.code !== undefined) {
+        errorCode = error.error.code;
+    } else if (error?.response?.error?.code !== undefined) {
+        errorCode = error.response.error.code;
+    }
+    
+    // Try to extract error message
+    let originalMessage = error?.message || error?.error?.message || error?.toString() || 'Unknown error';
+    
+    errorMessage += `Error: ${originalMessage}\n`;
+    
+    // If we have a recognized MCP error code, add helpful information
+    if (errorCode !== undefined && MCP_ERROR_INFO[errorCode]) {
+        const info = MCP_ERROR_INFO[errorCode];
+        errorMessage += `\n📋 MCP Error Details:\n`;
+        errorMessage += `   Code: ${info.code}\n`;
+        errorMessage += `   Name: ${info.name}\n`;
+        errorMessage += `   Description: ${info.description}\n`;
+        errorMessage += `   Common Cause: ${info.commonCause}\n`;
+        errorMessage += `   How to Handle: ${info.howToHandle}\n`;
+    } else if (errorCode !== undefined) {
+        errorMessage += `\nError Code: ${errorCode} (unknown MCP error code)\n`;
+    }
+    
+    return errorMessage;
+}
+
 class McpRepl {
 
     private mcp: Client;
@@ -26,64 +128,81 @@ class McpRepl {
     async connectScript(scriptPath: string) {
         console.log(`Connecting via stdio to ${scriptPath}`);
         
-        // If scriptPath contains shell commands or starts with a command (npx, node, etc.), use bash
-        const isShellCommand = scriptPath.includes('&&') || 
-                               scriptPath.includes('cd ') || 
-                               scriptPath.startsWith('npx ') ||
-                               scriptPath.includes(' ');
-        
-        if (isShellCommand) {
-            this.transport = new StdioClientTransport({
-                command: '/bin/bash',
-                args: ['-c', scriptPath],
-            });
-        } else {
-            // Simple script path without spaces or shell operators, use node to execute
-            this.transport = new StdioClientTransport({
-                command: process.execPath,
-                args: [scriptPath],
-            });
+        try {
+            // If scriptPath contains shell commands or starts with a command (npx, node, etc.), use bash
+            const isShellCommand = scriptPath.includes('&&') || 
+                                   scriptPath.includes('cd ') || 
+                                   scriptPath.startsWith('npx ') ||
+                                   scriptPath.includes(' ');
+            
+            if (isShellCommand) {
+                this.transport = new StdioClientTransport({
+                    command: '/bin/bash',
+                    args: ['-c', scriptPath],
+                });
+            } else {
+                // Simple script path without spaces or shell operators, use node to execute
+                this.transport = new StdioClientTransport({
+                    command: process.execPath,
+                    args: [scriptPath],
+                });
+            }
+            
+            await this.mcp.connect(this.transport);
+            console.log(`Connected via stdio to ${scriptPath}`);
+            this.connected = true;
+            this.transportType = 'stdio';
+            this.transportTarget = scriptPath;
+        } catch (error) {
+            console.error(`Failed to connect via stdio:\n${formatMcpError(error)}`);
+            throw error;
         }
-        
-        await this.mcp.connect(this.transport);
-        console.log(`Connected via stdio to ${scriptPath}`);
-        this.connected = true;
-        this.transportType = 'stdio';
-        this.transportTarget = scriptPath;
     }
 
     async connectSSE(url: string, apiKey?: string) {
         console.log(`Connecting via SSE to ${url}`);
-        this.transport = new SSEClientTransport(
-            new URL(url),
-            {
-                requestInit: {
-                    headers: apiKey ? { 'x-api-key': apiKey } : undefined,
+        
+        try {
+            this.transport = new SSEClientTransport(
+                new URL(url),
+                {
+                    requestInit: {
+                        headers: apiKey ? { 'x-api-key': apiKey } : undefined,
+                    }
                 }
-            }
-        );
-        await this.mcp.connect(this.transport);
-        console.log(`Connected via SSE to ${url}`);
-        this.connected = true;
-        this.transportType = 'sse';
-        this.transportTarget = url;
+            );
+            await this.mcp.connect(this.transport);
+            console.log(`Connected via SSE to ${url}`);
+            this.connected = true;
+            this.transportType = 'sse';
+            this.transportTarget = url;
+        } catch (error) {
+            console.error(`Failed to connect via SSE:\n${formatMcpError(error)}`);
+            throw error;
+        }
     }
 
     async connectHTTP(url: string, apiKey?: string) {
         console.log(`Connecting via HTTP to ${url}`);
-        this.transport = new StreamableHTTPClientTransport(
-            new URL(url),
-            {
-                requestInit: {
-                    headers: apiKey ? { 'x-api-key': apiKey } : undefined,
+        
+        try {
+            this.transport = new StreamableHTTPClientTransport(
+                new URL(url),
+                {
+                    requestInit: {
+                        headers: apiKey ? { 'x-api-key': apiKey } : undefined,
+                    }
                 }
-            }
-        );
-        await this.mcp.connect(this.transport);
-        console.log(`Connected via HTTP to ${url}`);
-        this.connected = true;
-        this.transportType = 'http';
-        this.transportTarget = url;
+            );
+            await this.mcp.connect(this.transport);
+            console.log(`Connected via HTTP to ${url}`);
+            this.connected = true;
+            this.transportType = 'http';
+            this.transportTarget = url;
+        } catch (error) {
+            console.error(`Failed to connect via HTTP:\n${formatMcpError(error)}`);
+            throw error;
+        }
     }
 
     async disconnect() {
@@ -111,26 +230,31 @@ class McpRepl {
     }
 
     async listTools(full: boolean = false) {
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.inputSchema,
-        }));
-
         if ( ! this.connected ) {
             return console.log('Not connected.');
         }
-        if ( this.tools.length === 0 ) {
-            return console.log('No tools available.');
-        }
+        
+        try {
+            const toolsResult = await this.mcp.listTools();
+            this.tools = toolsResult.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.inputSchema,
+            }));
 
-        if (full) {
-            console.log('Available tools (full details):');
-            console.log(JSON.stringify(this.tools, null, 2));
-        } else {
-            console.log('Available tools:');
-            this.tools.forEach((t) => console.log(`- ${t.name}: ${t.description}`));
+            if ( this.tools.length === 0 ) {
+                return console.log('No tools available.');
+            }
+
+            if (full) {
+                console.log('Available tools (full details):');
+                console.log(JSON.stringify(this.tools, null, 2));
+            } else {
+                console.log('Available tools:');
+                this.tools.forEach((t) => console.log(`- ${t.name}: ${t.description}`));
+            }
+        } catch (error) {
+            console.error(`Failed to list tools:\n${formatMcpError(error)}`);
         }
     }
 
@@ -139,18 +263,22 @@ class McpRepl {
             return console.log('Not connected.');
         }
         
-        // Ensure tools are loaded
-        if ( this.tools.length === 0 ) {
-            await this.listTools();
-        }
-        
-        const tool = this.tools.find((t) => t.name === toolName);
-        if ( ! tool ) {
-            return console.log(`Tool ${toolName} not found.`);
-        }
+        try {
+            // Ensure tools are loaded
+            if ( this.tools.length === 0 ) {
+                await this.listTools();
+            }
+            
+            const tool = this.tools.find((t) => t.name === toolName);
+            if ( ! tool ) {
+                return console.log(`Tool ${toolName} not found.`);
+            }
 
-        console.log(`Tool: ${tool.name}`);
-        console.log(JSON.stringify(tool, null, 2));
+            console.log(`Tool: ${tool.name}`);
+            console.log(JSON.stringify(tool, null, 2));
+        } catch (error) {
+            console.error(`Failed to show tool:\n${formatMcpError(error)}`);
+        }
     }
 
     async call(toolName: string, args: Record<string, any>) {
@@ -167,8 +295,8 @@ class McpRepl {
                 arguments: args
             });
             console.log('Tool result:', result.content);
-        } catch (err) {
-            console.error('Failed to call tool:', err);
+        } catch (error) {
+            console.error(`Failed to call tool:\n${formatMcpError(error)}`);
         }
     }
 
@@ -216,7 +344,7 @@ class McpRepl {
                     return false;
             }
         } catch (error) {
-            console.error('Automatic connection failed:', error);
+            console.error(`Automatic connection failed:\n${formatMcpError(error)}`);
             return false;
         }
     }
@@ -262,14 +390,18 @@ Commands:
                         console.log('Usage: connect sse|http|stdio <url_or_script> [apiKey]');
                         break;
                     }
-                    if ( type === 'stdio' ) {
-                        await this.connectScript(target);
-                    } else if ( type === 'http' ) {
-                        await this.connectHTTP(target, apiKey);
-                    } else if ( type === 'sse' ) {
-                        await this.connectSSE(target, apiKey);
-                    } else {
-                        console.log(`Unknown transport type: ${type}`);
+                    try {
+                        if ( type === 'stdio' ) {
+                            await this.connectScript(target);
+                        } else if ( type === 'http' ) {
+                            await this.connectHTTP(target, apiKey);
+                        } else if ( type === 'sse' ) {
+                            await this.connectSSE(target, apiKey);
+                        } else {
+                            console.log(`Unknown transport type: ${type}`);
+                        }
+                    } catch (error) {
+                        // Error already formatted and logged in connect methods
                     }
                     break;
                 case 'connectenv': {

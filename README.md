@@ -14,6 +14,41 @@ This tool provides a user-friendly command-line interface for connecting to and 
 - **Tool Management**: List and call tools from connected MCP servers
 - **Environment-Based Configuration**: Configure connections via `.env` file
 - **API key authentication**: Supports MCP servers using `x-api-key` header authentication
+- **Enhanced Error Handling**: Developer-friendly error messages with detailed explanations and recovery instructions
+
+## Error Handling
+
+The REPL includes comprehensive error handling for common MCP error codes. When an error occurs, you'll receive detailed information including:
+
+- **Error Code**: The numeric MCP error code
+- **Description**: What the error means
+- **Common Cause**: Why this error typically occurs
+- **How to Handle**: Step-by-step instructions to resolve the issue
+
+### Supported Error Codes
+
+| Code   | Error Name           | Description              | Common Cause                       |
+|--------|----------------------|--------------------------|------------------------------------|
+| -32000 | Authentication Error | Missing or invalid token | Missing or invalid API key         |
+| -32001 | Invalid Session      | Session not found        | Session expired or not initialized |
+| -32002 | Method Not Found     | Unknown method called    | Tool or method doesn't exist       |
+| -32003 | Invalid Parameters   | Bad parameters           | Parameters don't match schema      |
+| -32004 | Internal Error       | Server-side exception    | Bug or unexpected server error     |
+| -32005 | Parse Error          | Invalid JSON             | Malformed JSON in request          |
+
+### Example Error Output
+
+```
+Failed to connect via HTTP:
+Error: Authentication failed
+
+📋 MCP Error Details:
+   Code: -32000
+   Name: Authentication Error
+   Description: Missing or invalid authentication token
+   Common Cause: The API key or authentication credentials are missing or invalid
+   How to Handle: Check your MCP_API_KEY environment variable or provide a valid API key when connecting
+```
 
 ## Prerequisites
 
@@ -220,7 +255,32 @@ ISC
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+## Troubleshooting
+
+### Common Issues and Solutions
+
+**Authentication Error (-32000)**
+- Check that your API key is correct and properly set in the environment variable or connect command
+- Verify that the MCP server expects an `x-api-key` header
+
+**Invalid Session (-32001)**
+- Use the `disconnect` command followed by `connect` to reinitialize the session
+- Or use `connectenv` to reload configuration and reconnect
+
+**Method Not Found (-32002)**
+- Use the `tools` command to see all available tools
+- Check for typos in the tool name
+
+**Invalid Parameters (-32003)**
+- Use `tool <toolName>` to view the expected parameter schema
+- Verify that your JSON is properly formatted and includes all required fields
+
+**Parse Error (-32005)**
+- Check your JSON syntax, especially quotes and brackets
+- Example: `call get_weather {"city": "New York"}` not `call get_weather {city: New York}`
+
 ## Notes
 
 - Make sure your MCP server is running and accessible before connecting
 - Ensure you have the correct permissions for stdio-based connections
+- All errors include detailed recovery instructions to help you resolve issues quickly
