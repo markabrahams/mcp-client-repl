@@ -29,10 +29,26 @@ class McpRepl {
 
     async connectScript(scriptPath: string) {
         console.log(`Connecting via stdio to ${scriptPath}`);
-        this.transport = new StdioClientTransport({
-            command: process.execPath,
-            args: [scriptPath],
-        });
+        
+        // If scriptPath contains shell commands or starts with a command (npx, node, etc.), use bash
+        const isShellCommand = scriptPath.includes('&&') || 
+                               scriptPath.includes('cd ') || 
+                               scriptPath.startsWith('npx ') ||
+                               scriptPath.includes(' ');
+        
+        if (isShellCommand) {
+            this.transport = new StdioClientTransport({
+                command: '/bin/bash',
+                args: ['-c', scriptPath],
+            });
+        } else {
+            // Simple script path without spaces or shell operators, use node to execute
+            this.transport = new StdioClientTransport({
+                command: process.execPath,
+                args: [scriptPath],
+            });
+        }
+        
         await this.mcp.connect(this.transport);
         console.log(`Connected via stdio to ${scriptPath}`);
         this.connected = true;
