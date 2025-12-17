@@ -43,6 +43,20 @@ Run the following command to start the REPL:
 npm start
 ```
 
+You can optionally specify a different environment file to load on startup:
+
+```bash
+npm start .env-stdio     # Load .env-stdio file
+npm start .env-sse       # Load .env-sse file
+npm start .env-http      # Load .env-http file
+```
+
+Or use `--help` to see usage information:
+
+```bash
+npm start -- --help
+```
+
 ### Environment Variables (Optional)
 
 Create a `.env` file in the project root to enable automatic connection on startup:
@@ -57,15 +71,16 @@ When these environment variables are set, the REPL will automatically attempt to
 
 ### Commands
 
-| Command                            | Description                                            |
-|------------------------------------|--------------------------------------------------------|
-| `connect <type> <target> [apiKey]` | Connect to an MCP server                               |
-| `disconnect`                       | Disconnect from the current server                     |
-| `status`                           | Show connection status                                 |
-| `tools [full]`                     | List available tools (add 'full' for complete details) |
-| `call <toolName> <JSON>`           | Call a tool with JSON arguments                        |
-| `help`                             | Show help message                                      |
-| `exit`                             | Exit the REPL                                          |
+| Command                            | Description                                                       |
+|------------------------------------|-------------------------------------------------------------------|
+| `connect <type> <target> [apiKey]` | Connect to an MCP server                                          |
+| `connectenv <file>`                | Load environment variables from file, disconnect, and reconnect   |
+| `disconnect`                       | Disconnect from the current server                                |
+| `status`                           | Show connection status                                            |
+| `tools [full]`                     | List available tools (add 'full' for complete details)            |
+| `call <toolName> <JSON>`           | Call a tool with JSON arguments                                   |
+| `help`                             | Show help message                                                 |
+| `exit`                             | Exit the REPL                                                     |
 
 ### Connect to a Server
 
@@ -88,6 +103,24 @@ mcp> connect http https://your-server.com/mcp
 ```
 mcp> connect stdio path/to/your/server.js
 ```
+
+### Switch Between Server Configurations
+
+You can dynamically switch between different MCP server configurations using the `connectenv` command. This is useful when you have multiple environment files (e.g., `.env-stdio`, `.env-sse`, `.env-http`) and want to switch between them without restarting the REPL:
+
+```
+mcp> connectenv .env-sse
+Loading environment variables from .env-sse
+Environment variables loaded from .env-sse
+Disconnected from current server
+Attempting automatic sse connection from config to http://localhost:3000/sse
+Connected via SSE to http://localhost:3000/sse
+```
+
+This command will:
+1. Disconnect from the current server (if connected)
+2. Load new environment variables from the specified file
+3. Automatically connect to the new server using the loaded configuration
 
 ### List Available Tools
 

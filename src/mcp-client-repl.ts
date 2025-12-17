@@ -5,10 +5,6 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-dotenv.config({
-    quiet: true
-});
-
 class McpRepl {
 
     private mcp: Client;
@@ -100,6 +96,14 @@ class McpRepl {
         this.transportType = null;
         this.transportTarget = null;
         this.tools = [];
+        
+        // Create a new client instance since the old one is now closed and cannot be reused
+        this.mcp = new Client(
+            {
+                name: 'mcp-cli',
+                version: '1.0.0',
+            }
+        );
     }
 
     status() {
@@ -168,6 +172,22 @@ class McpRepl {
         }
     }
 
+    async loadEnvFile(filePath: string) {
+        console.log(`Loading environment variables from ${filePath}`);
+        try {
+            // Load the environment file and update process.env
+            dotenv.config({
+                path: filePath,
+                override: true
+            });
+            console.log(`Environment variables loaded from ${filePath}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to load environment file ${filePath}:`, error);
+            return false;
+        }
+    }
+
     async autoConnect() {
         const serverUrl = process.env.MCP_SERVER_URL;
         const transport = process.env.MCP_TRANSPORT;
@@ -220,6 +240,7 @@ class McpRepl {
                     console.log(`
 Commands:
   connect sse|http|stdio <url_or_script> [apiKey]  Connect to MCP server
+  connectenv <file>                                Load environment variables from file, disconnect, and reconnect
   disconnect                                       Disconnect from MCP server
   status                                           Show connection status
   tools [full]                                     List available tools (add 'full' for complete details)
@@ -251,6 +272,24 @@ Commands:
                         console.log(`Unknown transport type: ${type}`);
                     }
                     break;
+                case 'connectenv': {
+                    const [envFile] = args;
+                    if ( ! envFile ) {
+                        console.log('Usage: connectenv <file>');
+                        break;
+                    }
+                    // Disconnect if currently connected
+                    if (this.connected) {
+                        await this.disconnect();
+                    }
+                    // Load new environment variables from file
+                    const loaded = await this.loadEnvFile(envFile);
+                    if (loaded) {
+                        // Connect using the newly loaded environment variables
+                        await this.autoConnect();
+                    }
+                    break;
+                }
                 case 'disconnect':
                     await this.disconnect();
                     break;
@@ -295,6 +334,41 @@ Commands:
 }
 
 async function main() {
+    // Parse command-line arguments
+    const args = process.argv.slice(2);
+    
+    // Check for help flag
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log(`
+Usage: npm start [envFile]
+       tsx src/mcp-client-repl.ts [envFile]
+
+Arguments:
+  envFile    Optional path to .env file to load on startup (default: .env)
+
+Examples:
+  npm start                  # Load default .env file
+  npm start .env-stdio       # Load .env-stdio file
+  npm start .env-sse         # Load .env-sse file
+`);
+        process.exit(0);
+    }
+    
+    // Load environment variables from specified file or default
+    const envFile = args[0];
+    if (envFile) {
+        console.log(`Loading environment from ${envFile}`);
+        dotenv.config({
+            path: envFile,
+            override: true
+        });
+    } else {
+        // Load default .env file if it exists
+        dotenv.config({
+            quiet: true
+        });
+    }
+    
     const client = new McpRepl();
     await client.repl();
 }
